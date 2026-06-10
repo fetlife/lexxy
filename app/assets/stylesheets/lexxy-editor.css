@@ -463,6 +463,13 @@
     display: none;
   }
 
+  &[data-disabled-marks~="bold"] button[name="bold"],
+  &[data-disabled-marks~="italic"] button[name="italic"],
+  &[data-disabled-marks~="strikethrough"] button[name="strikethrough"],
+  &[data-disabled-marks~="underline"] button[name="underline"] {
+    display: none;
+  }
+
   &[data-upload="file"] button[name="image"] {
     display: none;
   }

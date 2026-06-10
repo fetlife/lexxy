@@ -15,6 +15,7 @@ const presets = new Configuration({
     multiLine: true,
     permittedAttachmentTypes: null,
     richText: true,
+    marks: [ "bold", "italic", "strikethrough", "underline" ],
     toolbar: {
       upload: "both"
     },
