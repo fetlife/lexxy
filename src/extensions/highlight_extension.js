@@ -24,7 +24,7 @@ const pendingCodeHighlights = new WeakMap()
 
 export class HighlightExtension extends LexxyExtension {
   get enabled() {
-    return this.editorElement.supportsRichText
+    return this.editorElement.supportsHighlight
   }
 
   get lexicalExtension() {
