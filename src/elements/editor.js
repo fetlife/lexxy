@@ -260,6 +260,13 @@ export class LexicalEditorElement extends HTMLElement {
     return this.config.get("richText")
   }
 
+  get supportsHighlight() {
+    // Accept both the object form ({ enabled: false }) and a bare boolean (highlight: false),
+    // mirroring the scalar-disable convention used by the sibling options.
+    const highlight = this.config.get("highlight")
+    return this.supportsRichText && highlight !== false && highlight?.enabled !== false
+  }
+
   registerAdapter(adapter) {
     this.adapter = adapter
 
@@ -407,6 +414,7 @@ export class LexicalEditorElement extends HTMLElement {
         export: new Map([ [ TextNode, exportTextNodeDOM ], [ CodeHighlightNode, exportTextNodeDOM ] ])
       },
       $initialEditorState: (editor) => {
+        this.#removeDisabledConversions(editor)
         this.#configureSanitizer(editor)
         this.#loadInitialValue(editor)
         this.#setInternalFormValue(this.#readSanitizedEditorValue(editor))
@@ -716,6 +724,7 @@ export class LexicalEditorElement extends HTMLElement {
     const toolbar = createElement("lexxy-toolbar")
     toolbar.innerHTML = LexicalToolbar.defaultTemplate
     toolbar.setAttribute("data-attachments", this.supportsAttachments) // Drives toolbar CSS styles
+    toolbar.setAttribute("data-highlight", this.supportsHighlight) // Drives toolbar CSS styles
     toolbar.configure(this.config.get("toolbar"))
     this.prepend(toolbar)
     return toolbar
@@ -723,6 +732,17 @@ export class LexicalEditorElement extends HTMLElement {
 
   #toggleEmptyStatus() {
     this.classList.toggle("lexxy-editor--empty", this.isEmpty)
+  }
+
+  // The highlight extension owns the <mark> import conversion, but Lexical's TextNode
+  // also imports <mark> as its built-in highlight format. When highlight is disabled the
+  // extension isn't registered, so drop the conversion entirely — highlighted markup is
+  // then reduced to plain text on every import path (initial value, setValue, paste) and
+  // <mark> is excluded from the sanitizer allow-list, which derives from these keys.
+  #removeDisabledConversions(editor) {
+    if (this.supportsHighlight) return
+
+    editor._htmlConversions?.delete("mark")
   }
 
   #configureSanitizer(editor) {
@@ -759,7 +779,7 @@ export class LexicalEditorElement extends HTMLElement {
         italic: { active: format.isItalic, enabled: true },
         strikethrough: { active: format.isStrikethrough, enabled: true },
         code: { active: format.isInCode, enabled: true },
-        highlight: { active: format.isHighlight, enabled: true },
+        highlight: { active: this.supportsHighlight && format.isHighlight, enabled: this.supportsHighlight },
         link: { active: format.isInLink, enabled: true },
         quote: { active: format.isInQuote, enabled: true },
         heading: { active: format.isInHeading, enabled: true },
@@ -770,7 +790,7 @@ export class LexicalEditorElement extends HTMLElement {
       }
 
       linkHref = linkNode ? linkNode.getURL() : null
-      highlight = format.isHighlight ? getHighlightStyles(selection) : null
+      highlight = this.supportsHighlight && format.isHighlight ? getHighlightStyles(selection) : null
       headingTag = format.headingTag ?? null
     })
 
@@ -804,6 +824,8 @@ export class LexicalEditorElement extends HTMLElement {
   }
 
   get #resolvedHighlightColors() {
+    if (!this.supportsHighlight) return null
+
     const buttons = this.config.get("highlight.buttons")
     if (!buttons) return null
 

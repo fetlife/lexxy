@@ -13,24 +13,32 @@ export class TrixContentExtension extends LexxyExtension {
   }
 
   get lexicalExtension() {
+    // The em/span/strong/del converters below exist to import legacy Trix highlight
+    // colors. When highlight is disabled we drop the color application so those
+    // elements fall back to plain formatting (the em/span/strong handlers return null,
+    // deferring to Lexical's default bold/italic conversion; del keeps strikethrough).
+    const supportsHighlight = this.editorElement.supportsHighlight
+
     return defineExtension({
       name: "lexxy/trix-content",
       html: {
         import: {
-          em: (element) => onlyStyledElements(element, {
+          em: (element) => onlyStyledElements(element, supportsHighlight, {
             conversion: extendTextNodeConversion("i", $applyHighlightStyle),
             priority: 1
           }),
-          span: (element) => onlyStyledElements(element, {
+          span: (element) => onlyStyledElements(element, supportsHighlight, {
             conversion: extendTextNodeConversion("mark", $applyHighlightStyle),
             priority: 1
           }),
-          strong: (element) => onlyStyledElements(element, {
+          strong: (element) => onlyStyledElements(element, supportsHighlight, {
             conversion: extendTextNodeConversion("b", $applyHighlightStyle),
             priority: 1
           }),
           del: () => ({
-            conversion: extendTextNodeConversion("s", $applyStrikethrough, $applyHighlightStyle),
+            conversion: supportsHighlight
+              ? extendTextNodeConversion("s", $applyStrikethrough, $applyHighlightStyle)
+              : extendTextNodeConversion("s", $applyStrikethrough),
             priority: 1
           }),
           pre: (element) => onlyPreLanguageElements(element, {
@@ -43,7 +51,9 @@ export class TrixContentExtension extends LexxyExtension {
   }
 }
 
-function onlyStyledElements(element, conversion) {
+function onlyStyledElements(element, supportsHighlight, conversion) {
+  if (!supportsHighlight) return null
+
   const elementHighlighted = element.style.color !== "" || element.style.backgroundColor !== ""
   return elementHighlighted ? conversion : null
 }

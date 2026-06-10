@@ -14,6 +14,8 @@ const NO_STYLE = Symbol("no_style")
 
 export class HighlightDropdown extends ToolbarDropdown {
   editorReady() {
+    if (!this.editorElement.supportsHighlight) return
+
     this.#setUpButtons()
     this.#registerButtonHandlers()
   }
@@ -34,6 +36,7 @@ export class HighlightDropdown extends ToolbarDropdown {
     this.#buttonContainer.innerHTML = ""
 
     const colorGroups = this.editorElement.config.get("highlight.buttons")
+    if (!colorGroups) return
 
     this.#populateButtonGroup("color", colorGroups.color)
     this.#populateButtonGroup("background-color", colorGroups["background-color"])

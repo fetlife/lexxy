@@ -32,3 +32,19 @@ Lexxy.configure({
   }
 })
 ```
+
+## Disabling highlighting
+
+Pass `highlight.enabled: false` to disable color highlighting entirely. The toolbar control is hidden, the commands become inert, and existing highlight markup is reduced to plain text on load.
+
+```javascript
+Lexxy.configure({
+  default: {
+    highlight: { enabled: false }
+  }
+})
+```
+
+Or per editor: `<lexxy-editor highlight='{"enabled":false}'></lexxy-editor>`.
+
+A bare boolean is also accepted as a shorthand — `highlight: false` in a preset, or `<lexxy-editor highlight="false">`.
