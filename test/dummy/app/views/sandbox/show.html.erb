@@ -15,11 +15,12 @@
       <a class="button" href="/sandbox/highlights" data-turbo-frame="editor">Text Highlights</a>
       <a class="button" href="/sandbox/images" data-turbo-frame="editor">Images</a>
       <a class="button" href="/sandbox/empty" data-turbo-frame="editor">Empty</a>
+      <a class="button" href="/sandbox/fetlife" data-turbo-frame="editor">FetLife</a>
     </div>
 
     <turbo-frame id="editor" target="_top">
       <div>
-        <%= rich_text_area_tag :sandbox, render(@template), placeholder: "Write something...", data: { lexxy_output_target: "editor" } do %>
+        <%= rich_text_area_tag :sandbox, render(@template), **@editor_options, placeholder: "Write something...", data: { lexxy_output_target: "editor" } do %>
           <lexxy-prompt trigger="@" src="<%= people_path %>" name="mention"></lexxy-prompt>
           <%= render "emoji_prompt", trigger: ":" %>
         <% end %>
