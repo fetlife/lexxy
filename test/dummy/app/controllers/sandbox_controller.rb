@@ -9,7 +9,8 @@ class SandboxController < ApplicationController
       code: "false",
       highlight: '{"enabled":false}',
       marks: '["bold","italic","strikethrough"]',
-      tables: "false"
+      tables: "false",
+      headings: '["h1","h2","h3","h4"]'
     }
   }.freeze
 
