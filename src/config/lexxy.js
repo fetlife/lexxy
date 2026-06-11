@@ -20,6 +20,7 @@ const presets = new Configuration({
       upload: "both"
     },
     highlight: {
+      enabled: true,
       buttons: {
         color: range(1, 9).map(n => `var(--highlight-${n})`),
         "background-color": range(1, 9).map(n => `var(--highlight-bg-${n})`),
