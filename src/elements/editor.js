@@ -13,6 +13,7 @@ import { CODE, INLINE_CODE, TRANSFORMERS, registerMarkdownShortcuts } from "@lex
 import { HORIZONTAL_DIVIDER } from "../editor/markdown/horizontal_divider_transformer"
 import { registerMarkdownLeadingTagHandler } from "../editor/markdown/leading_tag_handler"
 import { MARK_TO_TAGS, MARK_TYPES, withoutDisabledMarkTransformers } from "../editor/marks"
+import { HEADING_LEVELS } from "../editor/headings"
 
 import theme from "../config/theme"
 import { HorizontalDividerNode } from "../nodes/horizontal_divider_node"
@@ -790,6 +791,9 @@ export class LexicalEditorElement extends HTMLElement {
     toolbar.setAttribute("data-highlight", this.supportsHighlight) // Drives toolbar CSS styles
     toolbar.setAttribute("data-disabled-marks", this.disabledMarks.join(" ")) // Drives toolbar CSS styles
     if (!this.supportsCode) toolbar.querySelector("[name='code']")?.remove()
+    for (const level of HEADING_LEVELS) {
+      if (!this.#enabledHeadings.includes(level.tag)) toolbar.querySelector(`[name='${level.name}']`)?.remove()
+    }
     toolbar.configure(this.config.get("toolbar"))
     this.prepend(toolbar)
     return toolbar
@@ -916,14 +920,22 @@ export class LexicalEditorElement extends HTMLElement {
     return { colors, backgroundColors }
   }
 
+  // The heading levels the toolbar/format menu offers, driven by the `headings` config
+  // option. Markdown shortcuts (#…######) still produce headings regardless of this.
+  get #enabledHeadings() {
+    const configured = this.config.get("headings")
+    return Array.isArray(configured) ? configured : HEADING_LEVELS.map((level) => level.tag)
+  }
+
   get #supportedHeadingFormats() {
     if (!this.supportsRichText) return []
 
+    const enabled = this.#enabledHeadings
     return [
       { label: "Normal", command: "setFormatParagraph", tag: null },
-      { label: "Large heading", command: "setFormatHeadingLarge", tag: "h2" },
-      { label: "Medium heading", command: "setFormatHeadingMedium", tag: "h3" },
-      { label: "Small heading", command: "setFormatHeadingSmall", tag: "h4" },
+      ...HEADING_LEVELS
+        .filter((level) => enabled.includes(level.tag))
+        .map(({ label, command, tag }) => ({ label, command, tag })),
     ]
   }
 

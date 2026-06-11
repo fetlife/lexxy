@@ -18,6 +18,7 @@ const presets = new Configuration({
     tables: true,
     code: true,
     marks: [ "bold", "italic", "strikethrough", "underline" ],
+    headings: [ "h2", "h3", "h4" ],
     toolbar: {
       upload: "both"
     },

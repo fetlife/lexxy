@@ -53,6 +53,7 @@ Editors support the following options, configurable using presets and element at
 - `richText`: Pass `false` to disable rich text editing.
 - `tables`: Pass `false` to disable tables entirely. Table insertion is removed, and any existing `<table>` markup is reduced to plain text (cell text preserved) when loaded. By default, tables are enabled.
 - `highlight`: Color highlighting configuration. Pass `{ enabled: false }` (or simply `false`) to disable highlighting entirely (it is enabled by default). See [Highlighting](highlighting.md) for configuring the available colors.
+- `headings`: Choose which heading levels the toolbar offers, as an array of heading tags. Defaults to `["h2", "h3", "h4"]`. Any of `h1`–`h4` listed gets a button in the format dropdown; levels left out are hidden. Pass `[]` to remove every heading button. Markdown shortcuts (`#`…`######`) still produce headings regardless of this setting. Example: `<lexxy-editor headings='["h1", "h2", "h3"]'></lexxy-editor>`.
 
 The toolbar is considered part of the editor for `lexxy:focus` and `lexxy:blur` events. If the toolbar registers event or lexical handlers, it should expose a `dispose()` function which will be called on editor disconnect.
 

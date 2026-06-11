@@ -34,6 +34,7 @@ const COMMANDS = [
   "unlink",
   "toggleHighlight",
   "removeHighlight",
+  "setFormatHeadingHuge",
   "setFormatHeadingLarge",
   "setFormatHeadingMedium",
   "setFormatHeadingSmall",
@@ -230,6 +231,10 @@ export class CommandDispatcher {
 
   dispatchInsertHorizontalDivider() {
     $insertNodeToNearestRoot(new HorizontalDividerNode)
+  }
+
+  dispatchSetFormatHeadingHuge() {
+    this.contents.applyHeadingFormat("h1")
   }
 
   dispatchSetFormatHeadingLarge() {
