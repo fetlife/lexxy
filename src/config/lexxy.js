@@ -17,6 +17,7 @@ const presets = new Configuration({
     richText: true,
     tables: true,
     code: true,
+    marks: [ "bold", "italic", "strikethrough", "underline" ],
     toolbar: {
       upload: "both"
     },
