@@ -10,6 +10,27 @@ const valueOf = async (editor) => {
   return editor.value()
 }
 
+// Simulate pasting content copied from another Lexxy editor: the clipboard carries
+// `application/x-lexical-editor` (serialized nodes with their inline styles + format
+// bitfields) which Lexical deserializes directly, bypassing HTML import conversions.
+async function pasteLexicalNodes(editor, nodes) {
+  const payload = JSON.stringify({ namespace: "Lexxy", nodes })
+  await editor.content.evaluate((el, data) => {
+    const event = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: new DataTransfer() })
+    event.clipboardData.setData("application/x-lexical-editor", data)
+    event.clipboardData.setData("text/html", "<span>pasted</span>")
+    event.clipboardData.setData("text/plain", "pasted")
+    el.dispatchEvent(event)
+  }, payload)
+  await editor.flush()
+}
+
+// A serialized text node carrying a highlight color (and the highlight format bit, 1 << 7),
+// exactly as a copy from a highlight-enabled editor would produce.
+function highlightedTextNode(text, style) {
+  return { type: "text", version: 1, text, format: 1 << 7, style, mode: "normal", detail: 0 }
+}
+
 test.describe("Highlight disabled", () => {
   test("the highlight dropdown is visible by default (regression baseline)", async ({ page }) => {
     await page.goto("/")
@@ -51,6 +72,23 @@ test.describe("Highlight disabled", () => {
     for (const text of [ "red", "bg", "plain" ]) {
       expect(value).toContain(text)
     }
+  })
+
+  test("pasting Lexical clipboard data does not re-introduce highlight colors when disabled", async ({ page, editor }) => {
+    await page.goto("/highlight-false.html")
+    await editor.waitForConnected()
+
+    await editor.send("before ")
+    await pasteLexicalNodes(editor, [ highlightedTextNode("colored", "color: var(--highlight-1);") ])
+
+    await expect.poll(() => valueOf(editor)).not.toContain("var(--highlight")
+    await expect.poll(() => valueOf(editor)).not.toContain("color:")
+    expect(await valueOf(editor)).toContain("colored")
+
+    // the color must not survive in the live editor DOM either
+    await assertEditorContent(editor, async (content) => {
+      await expect(content.locator('[style*="color"]')).toHaveCount(0)
+    })
   })
 
   test("editor connects without crashing when highlight is disabled", async ({ page }) => {

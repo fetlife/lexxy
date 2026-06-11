@@ -3,6 +3,7 @@ import { buildEditorFromExtensions } from "@lexical/extension"
 import { ListItemNode, ListNode, registerList } from "@lexical/list"
 import { AutoLinkNode, LinkNode } from "@lexical/link"
 import { $getNearestNodeOfType } from "@lexical/utils"
+import { getCSSFromStyleObject, getStyleObjectFromCSS } from "@lexical/selection"
 import { registerPlainText } from "@lexical/plain-text"
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
 import { $generateHtmlFromNodes, $generateNodesFromDOM as $generateLexicalNodesFromDOM } from "@lexical/html"
@@ -622,6 +623,7 @@ export class LexicalEditorElement extends HTMLElement {
         registerList(this.editor)
       )
       this.#registerDisabledMarkStripper(registered)
+      this.#registerDisabledHighlightStripper(registered)
       if (this.supportsTables) this.#registerTableComponents()
       if (this.supportsCode) this.#registerCodeHiglightingComponents()
       if (this.supportsMarkdown) {
@@ -674,6 +676,26 @@ export class LexicalEditorElement extends HTMLElement {
     registered.push(this.editor.registerNodeTransform(TextNode, (node) => {
       for (const mark of disabledMarks) {
         if (node.hasFormat(mark)) node.toggleFormat(mark)
+      }
+    }))
+  }
+
+  // Highlight is stored as color/background-color styles (plus the highlight format bit)
+  // on text nodes. The import conversions strip <mark> and legacy Trix color, but content
+  // pasted from another Lexxy editor arrives as serialized nodes whose styles are restored
+  // directly — bypassing those conversions. This transform clears the highlight styling so
+  // a disabled highlight can never render in the editor, whatever path produced it.
+  #registerDisabledHighlightStripper(registered) {
+    if (this.supportsHighlight) return
+
+    registered.push(this.editor.registerNodeTransform(TextNode, (node) => {
+      if (node.hasFormat("highlight")) node.toggleFormat("highlight")
+
+      const styles = getStyleObjectFromCSS(node.getStyle())
+      if (styles.color || styles["background-color"]) {
+        delete styles.color
+        delete styles["background-color"]
+        node.setStyle(getCSSFromStyleObject(styles))
       }
     }))
   }
