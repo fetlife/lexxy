@@ -20,6 +20,8 @@ export class LexicalPromptElement extends HTMLElement {
   #globalListeners = new ListenerBin()
   #popoverListeners = new ListenerBin()
   #debouncedFilterOptions = debounce(() => this.#filterOptions(), FILTER_DEBOUNCE_INTERVAL)
+  #repositionFrame = null
+  #anchor = null
 
   constructor() {
     super()
@@ -216,8 +218,13 @@ export class LexicalPromptElement extends HTMLElement {
 
     this.#popoverListeners.track(
       registerEventListener(this.#editorElement, "keydown", this.#handleKeydownOnPopover),
-      registerEventListener(this.#editorElement, "lexxy:change", this.#debouncedFilterOptions)
+      registerEventListener(this.#editorElement, "lexxy:change", this.#debouncedFilterOptions),
+      registerEventListener(window, "scroll", this.#repositionPopover, { capture: true, passive: true })
     )
+
+    if (window.visualViewport) {
+      this.#popoverListeners.track(registerEventListener(window.visualViewport, "resize", this.#repositionPopover))
+    }
 
     this.#registerKeyListeners()
     this.#addCursorPositionListener()
@@ -295,25 +302,24 @@ export class LexicalPromptElement extends HTMLElement {
     }
   }
 
-  // Right after a Turbo history restore the editor reconnects before the DOM selection
-  // is re-established, so the cursor geometry is momentarily unavailable. Anchoring then
-  // would pin the menu to the editor's left edge for the rest of the open cycle, so we
-  // skip it and let a later reposition anchor it once the selection is ready. The menu
-  // stays hidden until anchored (see the `[data-anchored]` rule in the stylesheet).
+  // The menu anchors once at the trigger and stays pinned there while the search term
+  // is typed. Cursor geometry is momentarily unavailable right after a Turbo history
+  // restore (the editor reconnects before the DOM selection is re-established), so we
+  // bail until it is reliable rather than anchoring to a stale position; the menu stays
+  // hidden until then (see the `--visible[data-anchored]` rule in the stylesheet).
+  // The vertical flip is re-evaluated on every reposition (scroll, viewport resize) so
+  // the menu keeps clear of a clipping container as the editor moves.
   #positionPopover() {
-    const cursorPosition = this.#selection.cursorPosition
-    if (!cursorPosition) return
+    this.#anchor ??= this.#selection.cursorPosition
+    if (!this.#anchor) return
 
-    const { x, y, fontSize } = cursorPosition
+    const { x, y, fontSize } = this.#anchor
     const editorRect = this.#editorElement.getBoundingClientRect()
     const contentRect = this.#editorContentElement.getBoundingClientRect()
     const verticalOffset = contentRect.top - editorRect.top
 
-    if (!this.popoverElement.hasAttribute("data-anchored")) {
-      this.#setPopoverOffsetX(x)
-      this.#setPopoverOffsetY(y + verticalOffset)
-      this.popoverElement.toggleAttribute("data-anchored", true)
-    }
+    this.#setPopoverOffsetX(x)
+    this.popoverElement.toggleAttribute("data-anchored", true)
 
     const popoverRect = this.popoverElement.getBoundingClientRect()
 
@@ -323,12 +329,38 @@ export class LexicalPromptElement extends HTMLElement {
 
     const forceTop = this.verticalDirection === "top"
     const forceBottom = this.verticalDirection === "bottom"
-    const overflowsWindow = popoverRect.bottom > window.innerHeight
+    const downwardBottom = editorRect.top + verticalOffset + y + popoverRect.height
+    const clipAtBottom = !forceBottom && (forceTop || downwardBottom > this.#availableBottom())
 
-    if (!forceBottom && (forceTop || overflowsWindow)) {
-      this.#setPopoverOffsetY(contentRect.height - y + fontSize)
-      this.popoverElement.toggleAttribute("data-clipped-at-bottom", true)
+    this.#setPopoverOffsetY(clipAtBottom ? contentRect.height - y + fontSize : y + verticalOffset)
+    this.popoverElement.toggleAttribute("data-clipped-at-bottom", clipAtBottom)
+  }
+
+  // The bottom edge the menu must stay within: the lowest visible bottom among the
+  // editor's clipping ancestors (overflow other than `visible`), capped by the window.
+  // This flips the menu above the cursor when a scroll container or modal would clip
+  // it, even while the window itself still has room below.
+  #availableBottom() {
+    let bottom = window.innerHeight
+    let node = this.#editorElement
+
+    while (node && node !== document.body && node !== document.documentElement) {
+      if (getComputedStyle(node).overflowY !== "visible") {
+        bottom = Math.min(bottom, node.getBoundingClientRect().bottom)
+      }
+      node = node.parentElement
     }
+
+    return bottom
+  }
+
+  #repositionPopover = () => {
+    if (this.#repositionFrame || this.closed) return
+
+    this.#repositionFrame = requestAnimationFrame(() => {
+      this.#repositionFrame = null
+      if (this.open) this.#positionPopover()
+    })
   }
 
   #setPopoverOffsetX(value) {
@@ -340,6 +372,7 @@ export class LexicalPromptElement extends HTMLElement {
   }
 
   #resetPopoverPosition() {
+    this.#anchor = null
     this.popoverElement.removeAttribute("data-clipped-at-bottom")
     this.popoverElement.removeAttribute("data-clipped-at-right")
     this.popoverElement.removeAttribute("data-anchored")
