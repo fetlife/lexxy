@@ -21,12 +21,7 @@ export class FormatEscapeExtension extends LexxyExtension {
   get lexicalExtension() {
     return defineExtension({
       name: "lexxy/format-escape",
-      nodes: [
-        EarlyEscapeCodeNode,
-        { replace: CodeNode, with: (node) => new EarlyEscapeCodeNode(node.getLanguage()), withKlass: EarlyEscapeCodeNode },
-        EarlyEscapeListItemNode,
-        { replace: ListItemNode, with: () => new EarlyEscapeListItemNode(), withKlass: EarlyEscapeListItemNode },
-      ],
+      nodes: this.#nodes,
       register(editor) {
         return mergeRegister(
           editor.registerCommand(
@@ -43,6 +38,25 @@ export class FormatEscapeExtension extends LexxyExtension {
         )
       }
     })
+  }
+
+  // CodeNode is only registered when code support is enabled. Declaring a node
+  // replacement for an unregistered CodeNode throws at editor build, so the
+  // code-escape entries are included only when the editor supports code.
+  get #nodes() {
+    const nodes = [
+      EarlyEscapeListItemNode,
+      { replace: ListItemNode, with: () => new EarlyEscapeListItemNode(), withKlass: EarlyEscapeListItemNode },
+    ]
+
+    if (this.editorElement.supportsCode) {
+      nodes.unshift(
+        EarlyEscapeCodeNode,
+        { replace: CodeNode, with: (node) => new EarlyEscapeCodeNode(node.getLanguage()), withKlass: EarlyEscapeCodeNode },
+      )
+    }
+
+    return nodes
   }
 }
 

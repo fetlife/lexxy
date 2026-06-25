@@ -47,9 +47,13 @@ Editors support the following options, configurable using presets and element at
   - `toolbar.upload`: Control which upload button(s) appear in the toolbar. Accepts `"file"`, `"image"`, or `"both"` (default). The image button restricts the file picker to images and videos (`accept="image/*,video/*"`), which triggers the native photo/video picker on iOS and Android. The file button opens an unrestricted file picker.
 - `attachments`: Pass `false` to disable attachments completely. By default, attachments are supported, including paste and drag & drop support. For finer-grained control — keeping attachments enabled while restricting which content types are accepted — use `permittedAttachmentTypes`.
 - `markdown`: Pass `false` to disable Markdown support.
+- `marks`: Choose which inline marks the editor allows, as an allowlist. Defaults to `["bold", "italic", "strikethrough", "underline"]` (all). Any mark left out is disabled everywhere — its toolbar button is hidden, its keyboard shortcut and Markdown shortcut are inert, and its markup is reduced to plain text on import (paste, `value`, and initial content). Pass `[]` to disable all inline marks. Example: `<lexxy-editor marks='["bold", "italic"]'></lexxy-editor>`.
 - `multiLine`: Pass `false` to force single line editing.
 - `permittedAttachmentTypes`: Restrict the editor to a specific allowlist of attachment content types. Unset (the default) permits any content type. Example: `<lexxy-editor permitted-attachment-types="application/vnd.basecamp.mention application/vnd.basecamp.opengraph-embed"></lexxy-editor>`.
 - `richText`: Pass `false` to disable rich text editing.
+- `tables`: Pass `false` to disable tables entirely. Table insertion is removed, and any existing `<table>` markup is reduced to plain text (cell text preserved) when loaded. By default, tables are enabled.
+- `highlight`: Color highlighting configuration. Pass `{ enabled: false }` (or simply `false`) to disable highlighting entirely (it is enabled by default). See [Highlighting](highlighting.md) for configuring the available colors.
+- `headings`: Choose which heading levels the toolbar offers, as an array of heading tags. Defaults to `["h2", "h3", "h4"]`. Any of `h1`–`h4` listed gets a button in the format dropdown; levels left out are hidden. Pass `[]` to remove every heading button. Markdown shortcuts (`#`…`######`) still produce headings regardless of this setting. Example: `<lexxy-editor headings='["h1", "h2", "h3"]'></lexxy-editor>`.
 
 The toolbar is considered part of the editor for `lexxy:focus` and `lexxy:blur` events. If the toolbar registers event or lexical handlers, it should expose a `dispose()` function which will be called on editor disconnect.
 

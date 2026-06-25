@@ -24,10 +24,12 @@ const pendingCodeHighlights = new WeakMap()
 
 export class HighlightExtension extends LexxyExtension {
   get enabled() {
-    return this.editorElement.supportsRichText
+    return this.editorElement.supportsHighlight
   }
 
   get lexicalExtension() {
+    const supportsCode = this.editorElement.supportsCode
+
     const extension = defineExtension({
       dependencies: [ RichTextExtension ],
       name: "lexxy/highlight",
@@ -44,21 +46,32 @@ export class HighlightExtension extends LexxyExtension {
         // keep the ref to the canonicalizers for optimized css conversion
         const canonicalizers = buildCanonicalizers(config)
 
-        // Register the <pre> converter directly in the conversion cache so it
-        // coexists with other extensions' "pre" converters (the extension-level
-        // html.import uses Object.assign, which means only one "pre" per key).
-        $registerPreConversion(editor)
-
-        return mergeRegister(
+        const teardowns = [
           editor.registerCommand(TOGGLE_HIGHLIGHT_COMMAND, (styles) => $toggleSelectionStyles(editor, styles), COMMAND_PRIORITY_NORMAL),
           editor.registerCommand(REMOVE_HIGHLIGHT_COMMAND, () => $toggleSelectionStyles(editor, BLANK_STYLES), COMMAND_PRIORITY_NORMAL),
           editor.registerNodeTransform(TextNode, $syncHighlightWithStyle),
-          editor.registerNodeTransform(CodeHighlightNode, $syncHighlightWithCodeHighlightNode),
-          editor.registerNodeTransform(TextNode, (textNode) => $canonicalizePastedStyles(textNode, canonicalizers)),
-          editor.registerMutationListener(CodeNode, (mutations) => {
-            $applyPendingCodeHighlights(editor, mutations)
-          }, { skipInitialization: true })
-        )
+          editor.registerNodeTransform(TextNode, (textNode) => $canonicalizePastedStyles(textNode, canonicalizers))
+        ]
+
+        // Code-block highlighting depends on CodeNode/CodeHighlightNode being
+        // registered. When code is disabled those classes are absent, so the
+        // <pre> converter (which creates a CodeNode) and the node transform /
+        // mutation listener keyed on them would throw at editor build.
+        if (supportsCode) {
+          // Register the <pre> converter directly in the conversion cache so it
+          // coexists with other extensions' "pre" converters (the extension-level
+          // html.import uses Object.assign, which means only one "pre" per key).
+          $registerPreConversion(editor)
+
+          teardowns.push(
+            editor.registerNodeTransform(CodeHighlightNode, $syncHighlightWithCodeHighlightNode),
+            editor.registerMutationListener(CodeNode, (mutations) => {
+              $applyPendingCodeHighlights(editor, mutations)
+            }, { skipInitialization: true })
+          )
+        }
+
+        return mergeRegister(...teardowns)
       }
     })
 

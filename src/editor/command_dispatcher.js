@@ -36,6 +36,7 @@ const COMMANDS = [
   "unlink",
   "toggleHighlight",
   "removeHighlight",
+  "setFormatHeadingHuge",
   "setFormatHeadingLarge",
   "setFormatHeadingMedium",
   "setFormatHeadingSmall",
@@ -71,6 +72,7 @@ export class CommandDispatcher {
     this.contents = editorElement.contents
 
     this.#registerCommands()
+    this.#registerDisabledMarkInterceptor()
     this.#registerKeyboardCommands()
     this.#registerDragAndDropHandlers()
   }
@@ -159,6 +161,8 @@ export class CommandDispatcher {
   }
 
   dispatchInsertCodeBlock() {
+    if (!this.editorElement.supportsCode) return
+
     if (this.selection.hasSelectedWordsInSingleLine) {
       this.#toggleInlineCode()
     } else {
@@ -231,6 +235,10 @@ export class CommandDispatcher {
     $insertNodeToNearestRoot(new HorizontalDividerNode)
   }
 
+  dispatchSetFormatHeadingHuge() {
+    this.contents.applyHeadingFormat("h1")
+  }
+
   dispatchSetFormatHeadingLarge() {
     this.contents.applyHeadingFormat("h2")
   }
@@ -280,6 +288,8 @@ export class CommandDispatcher {
   }
 
   dispatchInsertTable() {
+    if (!this.editorElement.supportsTables) return
+
     this.editor.dispatchCommand(INSERT_TABLE_COMMAND, { "rows": 3, "columns": 3, "includeHeaders": true })
   }
 
@@ -300,6 +310,23 @@ export class CommandDispatcher {
       const methodName = `dispatch${capitalize(command)}`
       this.#registerCommandHandler(command, 0, this[methodName].bind(this))
     }
+  }
+
+  // Swallow FORMAT_TEXT_COMMAND for disabled marks at high priority, before
+  // Lexical's rich-text handler (registered at COMMAND_PRIORITY_EDITOR) can apply
+  // them. This single hook covers every path that ends in FORMAT_TEXT_COMMAND:
+  // the toolbar buttons, programmatic dispatch, and the native Cmd+B/I/U shortcuts
+  // Lexical dispatches internally even when the button is gone.
+  #registerDisabledMarkInterceptor() {
+    const disabledMarks = this.editorElement.disabledMarks
+    if (disabledMarks.length === 0) return
+
+    const disabled = new Set(disabledMarks)
+    this.#registerCommandHandler(
+      FORMAT_TEXT_COMMAND,
+      COMMAND_PRIORITY_HIGH,
+      (format) => disabled.has(format)
+    )
   }
 
   #registerCommandHandler(command, priority, handler) {

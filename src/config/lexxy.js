@@ -15,10 +15,15 @@ const presets = new Configuration({
     multiLine: true,
     permittedAttachmentTypes: null,
     richText: true,
+    tables: true,
+    code: true,
+    marks: [ "bold", "italic", "strikethrough", "underline" ],
+    headings: [ "h2", "h3", "h4" ],
     toolbar: {
       upload: "both"
     },
     highlight: {
+      enabled: true,
       buttons: {
         color: range(1, 9).map(n => `var(--highlight-${n})`),
         "background-color": range(1, 9).map(n => `var(--highlight-bg-${n})`),

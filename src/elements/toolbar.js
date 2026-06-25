@@ -11,6 +11,7 @@ import { ListenerBin, registerEventListener } from "../helpers/listener_helper"
 import { handleRollingTabIndex } from "../helpers/accessibility_helper"
 import ToolbarIcons from "./toolbar_icons"
 import { generateDomId, isActiveAndVisible } from "../helpers/html_helper"
+import { HEADING_LEVELS } from "../editor/headings"
 
 export class LexicalToolbarElement extends HTMLElement {
   static observedAttributes = [ "connected" ]
@@ -232,9 +233,9 @@ export class LexicalToolbarElement extends HTMLElement {
 
     this.#setButtonPressed("format", isInHeading)
     this.#setButtonPressed("paragraph", !isInHeading)
-    this.#setButtonPressed("heading-large", headingTag === "h2")
-    this.#setButtonPressed("heading-medium", headingTag === "h3")
-    this.#setButtonPressed("heading-small", headingTag === "h4")
+    for (const level of HEADING_LEVELS) {
+      this.#setButtonPressed(level.name, headingTag === level.tag)
+    }
 
     this.#setButtonPressed("lists", isInList)
     this.#setButtonPressed("unordered-list", isInList && listType === "bullet")
@@ -412,6 +413,9 @@ export class LexicalToolbarElement extends HTMLElement {
         <div data-dropdown-panel role="menu" class="lexxy-editor__toolbar-dropdown-list" hidden>
           <button type="button" name="paragraph" data-command="setFormatParagraph" title="Paragraph" role="menuitem">
             ${ToolbarIcons.paragraph} <span>Normal</span>
+          </button>
+          <button type="button" name="heading-huge" data-command="setFormatHeadingHuge" title="Huge heading" role="menuitem">
+            ${ToolbarIcons.h1} <span>Huge Heading</span>
           </button>
           <button type="button" name="heading-large" data-command="setFormatHeadingLarge" title="Large heading" role="menuitem">
             ${ToolbarIcons.h2} <span>Large Heading</span>

@@ -3,15 +3,18 @@ import { buildEditorFromExtensions } from "@lexical/extension"
 import { ListItemNode, ListNode, registerList } from "@lexical/list"
 import { AutoLinkNode, LinkNode } from "@lexical/link"
 import { $getNearestNodeOfType } from "@lexical/utils"
+import { getCSSFromStyleObject, getStyleObjectFromCSS } from "@lexical/selection"
 import { registerPlainText } from "@lexical/plain-text"
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
 import { $generateHtmlFromNodes, $generateNodesFromDOM as $generateLexicalNodesFromDOM } from "@lexical/html"
 import { filterDisallowedAttachmentNodes } from "../helpers/attachment_filter_helper"
 import { $convertInlineImageDataURIs } from "../helpers/inline_image_uri_helper"
 import { CodeHighlightNode, CodeNode, registerCodeHighlighting } from "@lexical/code"
-import { TRANSFORMERS, registerMarkdownShortcuts } from "@lexical/markdown"
+import { CODE, INLINE_CODE, TRANSFORMERS, registerMarkdownShortcuts } from "@lexical/markdown"
 import { HORIZONTAL_DIVIDER } from "../editor/markdown/horizontal_divider_transformer"
 import { registerMarkdownLeadingTagHandler } from "../editor/markdown/leading_tag_handler"
+import { MARK_TO_TAGS, MARK_TYPES, withoutDisabledMarkTransformers } from "../editor/marks"
+import { HEADING_LEVELS } from "../editor/headings"
 
 import theme from "../config/theme"
 import { HorizontalDividerNode } from "../nodes/horizontal_divider_node"
@@ -49,7 +52,6 @@ import { nextFrame } from "../helpers/timing_helper.js"
 export class LexicalEditorElement extends HTMLElement {
   static formAssociated = true
   static debug = false
-  static commands = [ "bold", "italic", "strikethrough" ]
 
   static observedAttributes = [ "autocapitalize", "connected", "required" ]
 
@@ -276,6 +278,47 @@ export class LexicalEditorElement extends HTMLElement {
     return this.config.get("richText")
   }
 
+  get supportsTables() {
+    return this.supportsRichText && this.config.get("tables")
+  }
+
+  get supportsHighlight() {
+    // Accept both the object form ({ enabled: false }) and a bare boolean (highlight: false),
+    // mirroring the scalar-disable convention used by the sibling options.
+    const highlight = this.config.get("highlight")
+    return this.supportsRichText && highlight !== false && highlight?.enabled !== false
+  }
+
+  get supportsCode() {
+    return this.supportsRichText && this.config.get("code")
+  }
+
+  // The inline marks the editor allows, as an allow-list intersected with the known
+  // mark types. Accepts an array (`marks='["bold"]'`) or a whitespace-separated string
+  // (`marks="bold italic"`), mirroring `permittedAttachmentTypes`. Any other value —
+  // a bare/empty attribute, a boolean, a number — is not a valid allow-list and falls
+  // back to all marks enabled, so a misconfiguration never silently disables everything.
+  // Use `marks='[]'` to disable every mark.
+  get enabledMarks() {
+    const configured = this.config.get("marks")
+
+    let list
+    if (Array.isArray(configured)) {
+      list = configured
+    } else if (typeof configured === "string" && configured.trim() !== "") {
+      list = configured.split(/\s+/)
+    } else {
+      return MARK_TYPES
+    }
+
+    return Object.freeze(MARK_TYPES.filter((mark) => list.includes(mark)))
+  }
+
+  get disabledMarks() {
+    const enabled = this.enabledMarks
+    return Object.freeze(MARK_TYPES.filter((mark) => !enabled.includes(mark)))
+  }
+
   registerAdapter(adapter) {
     this.adapter = adapter
 
@@ -425,6 +468,7 @@ export class LexicalEditorElement extends HTMLElement {
         export: new Map([ [ TextNode, exportTextNodeDOM ], [ CodeHighlightNode, exportTextNodeDOM ] ])
       },
       $initialEditorState: (editor) => {
+        this.#removeDisabledConversions(editor)
         this.#configureSanitizer(editor)
         this.#loadInitialValue(editor)
       },
@@ -452,12 +496,14 @@ export class LexicalEditorElement extends HTMLElement {
         HeadingNode,
         ListNode,
         ListItemNode,
-        CodeNode,
-        CodeHighlightNode,
         LinkNode,
         AutoLinkNode,
         HorizontalDividerNode
       )
+
+      if (this.supportsCode) {
+        nodes.push(CodeNode, CodeHighlightNode)
+      }
     }
 
     return nodes
@@ -601,10 +647,15 @@ export class LexicalEditorElement extends HTMLElement {
         registerRichText(this.editor),
         registerList(this.editor)
       )
-      this.#registerTableComponents()
-      this.#registerCodeHiglightingComponents()
+      this.#registerDisabledMarkStripper(registered)
+      this.#registerDisabledHighlightStripper(registered)
+      if (this.supportsTables) this.#registerTableComponents()
+      if (this.supportsCode) this.#registerCodeHiglightingComponents()
       if (this.supportsMarkdown) {
-        const transformers = [ ...TRANSFORMERS, HORIZONTAL_DIVIDER ]
+        // Both handlers must receive the disabled-mark-filtered list: the leading-tag handler
+        // applies formats via selection.formatText() (not FORMAT_TEXT_COMMAND), so the command
+        // interceptor can't stop it — dropping the transformer is what disables the shortcut there.
+        const transformers = withoutDisabledMarkTransformers(this.#enabledMarkdownTransformers(), this.disabledMarks)
         registered.push(
           registerMarkdownShortcuts(this.editor, transformers),
           registerMarkdownLeadingTagHandler(this.editor, transformers)
@@ -615,6 +666,13 @@ export class LexicalEditorElement extends HTMLElement {
     }
 
     this.#listeners.track(...registered)
+  }
+
+  #enabledMarkdownTransformers() {
+    const transformers = [ ...TRANSFORMERS, HORIZONTAL_DIVIDER ]
+    if (this.supportsCode) return transformers
+
+    return transformers.filter((transformer) => transformer !== CODE && transformer !== INLINE_CODE)
   }
 
   #registerTableComponents() {
@@ -630,6 +688,41 @@ export class LexicalEditorElement extends HTMLElement {
     codeLanguagePicker ??= createElement("lexxy-code-language-picker")
     this.append(codeLanguagePicker)
     this.#disposables.push(codeLanguagePicker)
+  }
+
+  // The import conversions and the FORMAT_TEXT_COMMAND interceptor cover HTML and command
+  // paths, but content pasted from another Lexical editor arrives as serialized nodes whose
+  // format bitfields are restored directly. This transform clears any disabled-mark bit so a
+  // disabled mark can never render in the editor, whatever path produced it.
+  #registerDisabledMarkStripper(registered) {
+    const disabledMarks = this.disabledMarks
+    if (disabledMarks.length === 0) return
+
+    registered.push(this.editor.registerNodeTransform(TextNode, (node) => {
+      for (const mark of disabledMarks) {
+        if (node.hasFormat(mark)) node.toggleFormat(mark)
+      }
+    }))
+  }
+
+  // Highlight is stored as color/background-color styles (plus the highlight format bit)
+  // on text nodes. The import conversions strip <mark> and legacy Trix color, but content
+  // pasted from another Lexxy editor arrives as serialized nodes whose styles are restored
+  // directly — bypassing those conversions. This transform clears the highlight styling so
+  // a disabled highlight can never render in the editor, whatever path produced it.
+  #registerDisabledHighlightStripper(registered) {
+    if (this.supportsHighlight) return
+
+    registered.push(this.editor.registerNodeTransform(TextNode, (node) => {
+      if (node.hasFormat("highlight")) node.toggleFormat("highlight")
+
+      const styles = getStyleObjectFromCSS(node.getStyle())
+      if (styles.color || styles["background-color"]) {
+        delete styles.color
+        delete styles["background-color"]
+        node.setStyle(getCSSFromStyleObject(styles))
+      }
+    }))
   }
 
   #handleEnter() {
@@ -741,6 +834,13 @@ export class LexicalEditorElement extends HTMLElement {
     const toolbar = createElement("lexxy-toolbar")
     toolbar.innerHTML = LexicalToolbar.defaultTemplate
     toolbar.setAttribute("data-attachments", this.supportsAttachments) // Drives toolbar CSS styles
+    toolbar.setAttribute("data-tables", this.supportsTables) // Drives toolbar CSS styles
+    toolbar.setAttribute("data-highlight", this.supportsHighlight) // Drives toolbar CSS styles
+    toolbar.setAttribute("data-disabled-marks", this.disabledMarks.join(" ")) // Drives toolbar CSS styles
+    if (!this.supportsCode) toolbar.querySelector("[name='code']")?.remove()
+    for (const level of HEADING_LEVELS) {
+      if (!this.#enabledHeadings.includes(level.tag)) toolbar.querySelector(`[name='${level.name}']`)?.remove()
+    }
     toolbar.configure(this.config.get("toolbar"))
     this.prepend(toolbar)
     return toolbar
@@ -748,6 +848,33 @@ export class LexicalEditorElement extends HTMLElement {
 
   #toggleEmptyStatus() {
     this.classList.toggle("lexxy-editor--empty", this.isEmpty)
+  }
+
+  // Drop HTML import conversions for disabled features so their markup is reduced to plain
+  // text on every import path (initial value, setValue, paste) and excluded from the
+  // sanitizer allow-list, which #getImportableTags derives from these same conversion keys.
+  #removeDisabledConversions(editor) {
+    if (!this.supportsHighlight) {
+      // The highlight extension owns the <mark> import conversion, but Lexical's TextNode
+      // also imports <mark> as its built-in highlight format. When highlight is disabled the
+      // extension isn't registered, so drop the conversion entirely.
+      editor._htmlConversions?.delete("mark")
+    }
+
+    if (!this.supportsCode) {
+      // CodeNode is not registered when code is disabled, but the `code` (inline) and `pre`
+      // HTML conversions remain — TextNode.importDOM registers `code` independently of CodeNode.
+      editor._htmlConversions?.delete("code")
+      editor._htmlConversions?.delete("pre")
+    }
+
+    // Each disabled mark's tag keys hold both Lexical's default TextNode conversion and the
+    // legacy Trix conversion, so deleting them strips the mark regardless of which produced it.
+    for (const mark of this.disabledMarks) {
+      for (const tag of MARK_TO_TAGS[mark]) {
+        editor._htmlConversions?.delete(tag)
+      }
+    }
   }
 
   #configureSanitizer(editor) {
@@ -780,11 +907,12 @@ export class LexicalEditorElement extends HTMLElement {
       const linkNode = $getNearestNodeOfType(anchorNode, LinkNode)
 
       attributes = {
-        bold: { active: format.isBold, enabled: true },
-        italic: { active: format.isItalic, enabled: true },
-        strikethrough: { active: format.isStrikethrough, enabled: true },
+        bold: { active: format.isBold, enabled: this.enabledMarks.includes("bold") },
+        italic: { active: format.isItalic, enabled: this.enabledMarks.includes("italic") },
+        strikethrough: { active: format.isStrikethrough, enabled: this.enabledMarks.includes("strikethrough") },
+        underline: { active: format.isUnderline, enabled: this.enabledMarks.includes("underline") },
         code: { active: format.isInCode, enabled: true },
-        highlight: { active: format.isHighlight, enabled: true },
+        highlight: { active: this.supportsHighlight && format.isHighlight, enabled: this.supportsHighlight },
         link: { active: format.isInLink, enabled: true },
         quote: { active: format.isInQuote, enabled: true },
         heading: { active: format.isInHeading, enabled: true },
@@ -795,7 +923,7 @@ export class LexicalEditorElement extends HTMLElement {
       }
 
       linkHref = linkNode ? linkNode.getURL() : null
-      highlight = format.isHighlight ? getHighlightStyles(selection) : null
+      highlight = this.supportsHighlight && format.isHighlight ? getHighlightStyles(selection) : null
       headingTag = format.headingTag ?? null
     })
 
@@ -829,6 +957,8 @@ export class LexicalEditorElement extends HTMLElement {
   }
 
   get #resolvedHighlightColors() {
+    if (!this.supportsHighlight) return null
+
     const buttons = this.config.get("highlight.buttons")
     if (!buttons) return null
 
@@ -837,14 +967,22 @@ export class LexicalEditorElement extends HTMLElement {
     return { colors, backgroundColors }
   }
 
+  // The heading levels the toolbar/format menu offers, driven by the `headings` config
+  // option. Markdown shortcuts (#…######) still produce headings regardless of this.
+  get #enabledHeadings() {
+    const configured = this.config.get("headings")
+    return Array.isArray(configured) ? configured : HEADING_LEVELS.map((level) => level.tag)
+  }
+
   get #supportedHeadingFormats() {
     if (!this.supportsRichText) return []
 
+    const enabled = this.#enabledHeadings
     return [
       { label: "Normal", command: "setFormatParagraph", tag: null },
-      { label: "Large heading", command: "setFormatHeadingLarge", tag: "h2" },
-      { label: "Medium heading", command: "setFormatHeadingMedium", tag: "h3" },
-      { label: "Small heading", command: "setFormatHeadingSmall", tag: "h4" },
+      ...HEADING_LEVELS
+        .filter((level) => enabled.includes(level.tag))
+        .map(({ label, command, tag }) => ({ label, command, tag })),
     ]
   }
 
