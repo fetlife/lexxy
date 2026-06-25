@@ -159,6 +159,8 @@ export class CommandDispatcher {
   }
 
   dispatchInsertCodeBlock() {
+    if (!this.editorElement.supportsCode) return
+
     if (this.selection.hasSelectedWordsInSingleLine) {
       this.#toggleInlineCode()
     } else {

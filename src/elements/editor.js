@@ -9,7 +9,7 @@ import { $generateHtmlFromNodes, $generateNodesFromDOM as $generateLexicalNodesF
 import { filterDisallowedAttachmentNodes } from "../helpers/attachment_filter_helper"
 import { $convertInlineImageDataURIs } from "../helpers/inline_image_uri_helper"
 import { CodeHighlightNode, CodeNode, registerCodeHighlighting } from "@lexical/code"
-import { TRANSFORMERS, registerMarkdownShortcuts } from "@lexical/markdown"
+import { CODE, INLINE_CODE, TRANSFORMERS, registerMarkdownShortcuts } from "@lexical/markdown"
 import { HORIZONTAL_DIVIDER } from "../editor/markdown/horizontal_divider_transformer"
 import { registerMarkdownLeadingTagHandler } from "../editor/markdown/leading_tag_handler"
 
@@ -276,6 +276,10 @@ export class LexicalEditorElement extends HTMLElement {
     return this.config.get("richText")
   }
 
+  get supportsCode() {
+    return this.supportsRichText && this.config.get("code")
+  }
+
   registerAdapter(adapter) {
     this.adapter = adapter
 
@@ -425,6 +429,7 @@ export class LexicalEditorElement extends HTMLElement {
         export: new Map([ [ TextNode, exportTextNodeDOM ], [ CodeHighlightNode, exportTextNodeDOM ] ])
       },
       $initialEditorState: (editor) => {
+        this.#removeDisabledConversions(editor)
         this.#configureSanitizer(editor)
         this.#loadInitialValue(editor)
       },
@@ -452,12 +457,14 @@ export class LexicalEditorElement extends HTMLElement {
         HeadingNode,
         ListNode,
         ListItemNode,
-        CodeNode,
-        CodeHighlightNode,
         LinkNode,
         AutoLinkNode,
         HorizontalDividerNode
       )
+
+      if (this.supportsCode) {
+        nodes.push(CodeNode, CodeHighlightNode)
+      }
     }
 
     return nodes
@@ -602,9 +609,9 @@ export class LexicalEditorElement extends HTMLElement {
         registerList(this.editor)
       )
       this.#registerTableComponents()
-      this.#registerCodeHiglightingComponents()
+      if (this.supportsCode) this.#registerCodeHiglightingComponents()
       if (this.supportsMarkdown) {
-        const transformers = [ ...TRANSFORMERS, HORIZONTAL_DIVIDER ]
+        const transformers = this.#enabledMarkdownTransformers()
         registered.push(
           registerMarkdownShortcuts(this.editor, transformers),
           registerMarkdownLeadingTagHandler(this.editor, transformers)
@@ -615,6 +622,13 @@ export class LexicalEditorElement extends HTMLElement {
     }
 
     this.#listeners.track(...registered)
+  }
+
+  #enabledMarkdownTransformers() {
+    const transformers = [ ...TRANSFORMERS, HORIZONTAL_DIVIDER ]
+    if (this.supportsCode) return transformers
+
+    return transformers.filter((transformer) => transformer !== CODE && transformer !== INLINE_CODE)
   }
 
   #registerTableComponents() {
@@ -741,6 +755,7 @@ export class LexicalEditorElement extends HTMLElement {
     const toolbar = createElement("lexxy-toolbar")
     toolbar.innerHTML = LexicalToolbar.defaultTemplate
     toolbar.setAttribute("data-attachments", this.supportsAttachments) // Drives toolbar CSS styles
+    if (!this.supportsCode) toolbar.querySelector("[name='code']")?.remove()
     toolbar.configure(this.config.get("toolbar"))
     this.prepend(toolbar)
     return toolbar
@@ -748,6 +763,18 @@ export class LexicalEditorElement extends HTMLElement {
 
   #toggleEmptyStatus() {
     this.classList.toggle("lexxy-editor--empty", this.isEmpty)
+  }
+
+  // CodeNode is not registered when code is disabled, but the `code` (inline) and
+  // `pre` HTML conversions remain — TextNode.importDOM registers `code` independently
+  // of CodeNode. Drop them so code markup is reduced to plain text on every import
+  // path (initial value, setValue, paste) and excluded from the sanitizer allow-list,
+  // which #getImportableTags derives from these same conversion keys.
+  #removeDisabledConversions(editor) {
+    if (this.supportsCode) return
+
+    editor._htmlConversions?.delete("code")
+    editor._htmlConversions?.delete("pre")
   }
 
   #configureSanitizer(editor) {
