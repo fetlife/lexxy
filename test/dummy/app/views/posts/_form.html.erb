@@ -49,6 +49,7 @@
           autofocus: params[:autofocus] ? "true" : nil,
           attachments: (params[:attachments_disabled] != "true"),
           markdown: params[:markdown_disabled] ? "false" : nil,
+          marks: params[:marks].presence,
           "single-line": params[:multi_line_disabled] ? "true" : nil,
           "rich-text": params[:rich_text_disabled] ? "false" : nil,
           toolbar: params[:toolbar_disabled] ? "false" : (params[:toolbar_external] ? "external_toolbar" : nil),

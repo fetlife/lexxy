@@ -19,7 +19,7 @@ describe("attributes change event", () => {
     })
 
     const expectedKeys = [
-      "bold", "italic", "strikethrough", "code", "highlight",
+      "bold", "italic", "strikethrough", "underline", "code", "highlight",
       "link", "quote", "heading", "unordered-list", "ordered-list",
       "undo", "redo"
     ]
@@ -56,6 +56,7 @@ describe("attributes change event", () => {
     expect(event.detail.attributes.bold).toEqual({ active: false, enabled: true })
     expect(event.detail.attributes.italic).toEqual({ active: false, enabled: true })
     expect(event.detail.attributes.strikethrough).toEqual({ active: false, enabled: true })
+    expect(event.detail.attributes.underline).toEqual({ active: false, enabled: true })
     expect(event.detail.attributes.code).toEqual({ active: false, enabled: true })
     expect(event.detail.attributes.link).toEqual({ active: false, enabled: true })
     expect(event.detail.attributes.quote).toEqual({ active: false, enabled: true })

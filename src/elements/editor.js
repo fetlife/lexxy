@@ -12,6 +12,7 @@ import { CodeHighlightNode, CodeNode, registerCodeHighlighting } from "@lexical/
 import { TRANSFORMERS, registerMarkdownShortcuts } from "@lexical/markdown"
 import { HORIZONTAL_DIVIDER } from "../editor/markdown/horizontal_divider_transformer"
 import { registerMarkdownLeadingTagHandler } from "../editor/markdown/leading_tag_handler"
+import { MARK_TO_TAGS, MARK_TYPES, withoutDisabledMarkTransformers } from "../editor/marks"
 
 import theme from "../config/theme"
 import { HorizontalDividerNode } from "../nodes/horizontal_divider_node"
@@ -49,7 +50,6 @@ import { nextFrame } from "../helpers/timing_helper.js"
 export class LexicalEditorElement extends HTMLElement {
   static formAssociated = true
   static debug = false
-  static commands = [ "bold", "italic", "strikethrough" ]
 
   static observedAttributes = [ "autocapitalize", "connected", "required" ]
 
@@ -276,6 +276,32 @@ export class LexicalEditorElement extends HTMLElement {
     return this.config.get("richText")
   }
 
+  // The inline marks the editor allows, as an allow-list intersected with the known
+  // mark types. Accepts an array (`marks='["bold"]'`) or a whitespace-separated string
+  // (`marks="bold italic"`), mirroring `permittedAttachmentTypes`. Any other value —
+  // a bare/empty attribute, a boolean, a number — is not a valid allow-list and falls
+  // back to all marks enabled, so a misconfiguration never silently disables everything.
+  // Use `marks='[]'` to disable every mark.
+  get enabledMarks() {
+    const configured = this.config.get("marks")
+
+    let list
+    if (Array.isArray(configured)) {
+      list = configured
+    } else if (typeof configured === "string" && configured.trim() !== "") {
+      list = configured.split(/\s+/)
+    } else {
+      return MARK_TYPES
+    }
+
+    return Object.freeze(MARK_TYPES.filter((mark) => list.includes(mark)))
+  }
+
+  get disabledMarks() {
+    const enabled = this.enabledMarks
+    return Object.freeze(MARK_TYPES.filter((mark) => !enabled.includes(mark)))
+  }
+
   registerAdapter(adapter) {
     this.adapter = adapter
 
@@ -425,6 +451,7 @@ export class LexicalEditorElement extends HTMLElement {
         export: new Map([ [ TextNode, exportTextNodeDOM ], [ CodeHighlightNode, exportTextNodeDOM ] ])
       },
       $initialEditorState: (editor) => {
+        this.#removeDisabledConversions(editor)
         this.#configureSanitizer(editor)
         this.#loadInitialValue(editor)
       },
@@ -601,10 +628,14 @@ export class LexicalEditorElement extends HTMLElement {
         registerRichText(this.editor),
         registerList(this.editor)
       )
+      this.#registerDisabledMarkStripper(registered)
       this.#registerTableComponents()
       this.#registerCodeHiglightingComponents()
       if (this.supportsMarkdown) {
-        const transformers = [ ...TRANSFORMERS, HORIZONTAL_DIVIDER ]
+        // Both handlers must receive the disabled-mark-filtered list: the leading-tag handler
+        // applies formats via selection.formatText() (not FORMAT_TEXT_COMMAND), so the command
+        // interceptor can't stop it — dropping the transformer is what disables the shortcut there.
+        const transformers = withoutDisabledMarkTransformers([ ...TRANSFORMERS, HORIZONTAL_DIVIDER ], this.disabledMarks)
         registered.push(
           registerMarkdownShortcuts(this.editor, transformers),
           registerMarkdownLeadingTagHandler(this.editor, transformers)
@@ -630,6 +661,21 @@ export class LexicalEditorElement extends HTMLElement {
     codeLanguagePicker ??= createElement("lexxy-code-language-picker")
     this.append(codeLanguagePicker)
     this.#disposables.push(codeLanguagePicker)
+  }
+
+  // The import conversions and the FORMAT_TEXT_COMMAND interceptor cover HTML and command
+  // paths, but content pasted from another Lexical editor arrives as serialized nodes whose
+  // format bitfields are restored directly. This transform clears any disabled-mark bit so a
+  // disabled mark can never render in the editor, whatever path produced it.
+  #registerDisabledMarkStripper(registered) {
+    const disabledMarks = this.disabledMarks
+    if (disabledMarks.length === 0) return
+
+    registered.push(this.editor.registerNodeTransform(TextNode, (node) => {
+      for (const mark of disabledMarks) {
+        if (node.hasFormat(mark)) node.toggleFormat(mark)
+      }
+    }))
   }
 
   #handleEnter() {
@@ -741,6 +787,7 @@ export class LexicalEditorElement extends HTMLElement {
     const toolbar = createElement("lexxy-toolbar")
     toolbar.innerHTML = LexicalToolbar.defaultTemplate
     toolbar.setAttribute("data-attachments", this.supportsAttachments) // Drives toolbar CSS styles
+    toolbar.setAttribute("data-disabled-marks", this.disabledMarks.join(" ")) // Drives toolbar CSS styles
     toolbar.configure(this.config.get("toolbar"))
     this.prepend(toolbar)
     return toolbar
@@ -748,6 +795,19 @@ export class LexicalEditorElement extends HTMLElement {
 
   #toggleEmptyStatus() {
     this.classList.toggle("lexxy-editor--empty", this.isEmpty)
+  }
+
+  // Drop the html conversions for disabled marks so their markup is reduced to
+  // plain text on every import path (initial value, setValue, paste). Each tag key
+  // holds both Lexical's default TextNode conversion and the legacy Trix conversion,
+  // so deleting it strips the mark regardless of which produced it. It also removes
+  // the tag from the sanitizer allow-list, which derives from these keys.
+  #removeDisabledConversions(editor) {
+    for (const mark of this.disabledMarks) {
+      for (const tag of MARK_TO_TAGS[mark]) {
+        editor._htmlConversions?.delete(tag)
+      }
+    }
   }
 
   #configureSanitizer(editor) {
@@ -780,9 +840,10 @@ export class LexicalEditorElement extends HTMLElement {
       const linkNode = $getNearestNodeOfType(anchorNode, LinkNode)
 
       attributes = {
-        bold: { active: format.isBold, enabled: true },
-        italic: { active: format.isItalic, enabled: true },
-        strikethrough: { active: format.isStrikethrough, enabled: true },
+        bold: { active: format.isBold, enabled: this.enabledMarks.includes("bold") },
+        italic: { active: format.isItalic, enabled: this.enabledMarks.includes("italic") },
+        strikethrough: { active: format.isStrikethrough, enabled: this.enabledMarks.includes("strikethrough") },
+        underline: { active: format.isUnderline, enabled: this.enabledMarks.includes("underline") },
         code: { active: format.isInCode, enabled: true },
         highlight: { active: format.isHighlight, enabled: true },
         link: { active: format.isInLink, enabled: true },
